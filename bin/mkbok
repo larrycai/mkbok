@@ -1,17 +1,274 @@
 #!/usr/bin/env ruby
 
-puts "It is coming.."
+require 'optparse'
+require 'fileutils'
+require 'erb'
+require 'yaml'
 
-puts <<eof
-$ gem install mkbok
-$ mkbok create sample --title "learn mkbok"
-$ mkbok build --local # needs pandoc,XeTex packages
+include FileUtils
 
-If you already follow the mkbok configuration, then
+options = {}
+CONFIG_FILE = File.join('.mkbok.yml')
+if File.exists? CONFIG_FILE
+    config_options = YAML.load_file(CONFIG_FILE)
+    options.merge!(config_options)
+end
 
-$ mkbok init # add needed configuration for your existing markdown files
-$ mkbok build --web http://mkbok.com/diy # it will zip file and upload to web
-$ mkbok build --web http://mkbok.com/ --source http://github.com/larrycai/mkbok # generate pdf from github
-eof
+option_parser = OptionParser.new do |opts|
+    executable_name = File.basename($PROGRAM_NAME)
+    opts.banner = "make ebooks from markdown plain text
+    Usage: #{executable_name} [options]    
+    "
+    # Create a switch
+    opts.on("-b","--build FORMAT","build") do |format|
+        unless format=="pdf"
+            raise ArgumentError,"FORMAT must be in 'pdf' format"
+        end
+        options[:build] = format
+    end
+    # Create a flag
+    opts.on("-l","--lang LANG","language selection") do |lang|
+        unless lang=="zh" or lang=="en"
+            raise ArgumentError,"LANG must be in zh or en"
+        end
+        options[:lang] = lang
+    end
+    opts.on("-c","--config CONFIG","config file") do |config|
+        unless File.exists? config
+            raise ArgumentError,"config file \"#{config}\" doesn't exist"
+        end
+        options[:config] = config
+    end
+    opts.on("-t","--template template.tex","latex template file") do |template|
+        unless File.exists? template
+            raise ArgumentError,"template file \"#{template}\" doesn't exist"
+        end
+        options[:template] = template
+    end
+    opts.on("-n","--name book name","book name") do |name|
+        unless name =~ /^[a-zA-Z0-9]+$/
+            raise ArgumentError,"name should be [a-zA-Z0-9]"
+        end
+        options[:name] = name
+    end
+end
 
-puts "Please wait and check github.com/larrycai/mkbok"
+option_parser.parse!
+puts options.inspect
+
+$here = File.expand_path(File.dirname(__FILE__))
+$root = File.join($here)
+$outDir = File.join($root, 'pdf')
+
+def figures(&block)
+	begin
+		Dir["#$root/figures/18333*.png"].each do |file|
+			cp(file, file.sub(/18333fig0(\d)0?(\d+)\-tn/, '\1.\2'))
+		end
+		block.call
+	ensure
+		Dir["#$root/figures/18333*.png"].each do |file|
+			rm(file.gsub(/18333fig0(\d)0?(\d+)\-tn/, '\1.\2'))
+		end
+	end
+end
+
+def command_exists?(command)
+	if File.executable?(command) then
+		return command
+	end
+	ENV['PATH'].split(File::PATH_SEPARATOR).map do |path|
+		cmd = "#{path}/#{command}"
+		File.executable?(cmd) || File.executable?("#{cmd}.exe") || File.executable?("#{cmd}.cmd")
+	end.inject{|a, b| a || b}
+end
+
+def replace(string, &block)
+	string.instance_eval do
+		alias :s :gsub!
+		instance_eval(&block)
+	end
+	string
+end
+
+def verbatim_sanitize(string)
+	string.gsub('\\', '{\textbackslash}').
+		gsub('~', '{\textasciitilde}').
+		gsub(/([\$\#\_\^\%])/, '\\\\' + '\1{}')
+end
+
+def pre_pandoc(string, config)
+	replace(string) do
+                s /\#\#\#\#\# (.*?) \#\#\#\#\#/, 'PARASECTION: \1'
+		# Pandoc discards #### subsubsections #### - this hack recovers them
+		s /\#\#\#\# (.*?) \#\#\#\#/, 'SUBSUBSECTION: \1'
+		
+		# Turns URLs into clickable links
+		s /\`(http:\/\/[A-Za-z0-9\/\%\&\=\-\_\\\.]+)\`/, '<\1>'
+		s /(\n\n)\t(http:\/\/[A-Za-z0-9\/\%\&\=\-\_\\\.]+)\n([^\t]|\t\n)/, '\1<\2>\1'
+
+		# Process figures
+		s /Insert\s18333fig\d+\.png\s*\n.*?\d{1,2}-\d{1,2}\. (.*)/, 'FIG: \1'
+	end
+end
+
+def post_pandoc(string, config, lang, chapter=true)
+	replace(string) do
+		space = /\s/
+
+		# Reformat for the book documentclass as opposed to article
+		s '\section', '\chap'
+		s '\sub', '\\'
+		s /SUBSUBSECTION: (.*)/, '\subsubsection{\1}'
+                s /PARASECTION: (.*)/, '\paragraph{\1}'
+
+		# Enable proper cross-reference
+		s /#{config['fig'].gsub(space, '\s')}\s*(\d+)\-\-(\d+)/, '\imgref{\1.\2}'
+		s /#{config['tab'].gsub(space, '\s')}\s*(\d+)\-\-(\d+)/, '\tabref{\1.\2}'
+		s /#{config['prechap'].gsub(space, '\s')}\s*(\d+)(\s*)#{config['postchap'].gsub(space, '\s')}/, '\chapref{\1}\2'
+
+		# Miscellaneous fixes
+		s /FIG: (.*)/, '\img{\1}'
+		s '\begin{enumerate}[1.]', '\begin{enumerate}'
+		s /(\w)--(\w)/, '\1-\2'
+		s /``(.*?)''/, "#{config['dql']}\\1#{config['dqr']}"
+
+		# Typeset the maths in the book with TeX
+		s '\verb!p = (n(n-1)/2) * (1/2^160))!', '$p = \frac{n(n-1)}{2} \times \frac{1}{2^{160}}$)'
+		s '2\^{}80', '$2^{80}$'
+		s /\sx\s10\\\^\{\}(\d+)/, '\e{\1}'
+
+		# Convert inline-verbatims into \texttt (which is able to wrap)
+		s /\\verb(\W)(.*?)\1/ do
+			"{\\texttt{#{verbatim_sanitize($2)}}}"
+		end
+
+		# Ensure monospaced stuff is in a smaller font
+		s /(\\verb(\W).*?\2)/, '{\footnotesize\1}'
+		s /(\\begin\{verbatim\}.*?\\end\{verbatim\})/m, '{\footnotesize\1}'
+
+		# Shaded verbatim block
+		s /(\\begin\{verbatim\}.*?\\end\{verbatim\})/m, '\begin{shaded}\1\end{shaded}'
+		
+        if lang=="zh" 
+            # http://www.devdaily.com/blog/post/latex/control-line-spacing-in-itemize-enumerate-tags
+            # http://wiki.ctex.org/index.php/LaTeX/%E5%88%97%E8%A1%A8
+            # set the space of itemsize
+            s /(\\begin\{itemize\})/m,'\begin{itemize}\setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}\setlength{\parsep}{0pt}'
+            s /(\\begin\{enumerate\})/m,'\begin{enumerate}\setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}\setlength{\parsep}{0pt}'
+            # hardcode for itemize to use * instead of dot, which is missed in some chinese fonts
+            # and keep \item inside \enumerate env is not changed
+            # \item -> \item[*]
+            # solution is provided by Alexis, and it works under ruby 1.9+ only due to bug in 1.8.7
+            # http://stackoverflow.com/questions/9115018/regular-expression-using-ruby-string-gsub-method-to-replace-multi-matches
+            if RUBY_VERSION >= "1.9"
+                s /^\\item(?=((?!\\begin\{itemize\}).)*\\end\{itemize\})/m, '\\item[*]'
+            else
+                s /(^\\item)/m,'\item[*]'
+            end
+        end
+        
+        if chapter != true
+            s /^\\chap\{(.*)\}/,'\chapter*{\1}'"\n"'\addcontentsline{toc}{chapter}{\1}'
+            s /^\\section\{(.*)\}/,'\section*{\1}'
+            s /^\\subsection\{(.*)\}/,'\subsection*{\1}'
+        end
+		
+	end
+end
+
+#` 
+
+$config = YAML.load_file(options[:config])
+template = ERB.new(File.read(options[:template]))
+languages = [options[:lang]]
+missing = ['pandoc', 'xelatex'].reject{|command| command_exists?(command)}
+unless missing.empty?
+	puts "Missing dependencies: #{missing.join(', ')}."
+	puts "Install these and try again."
+	exit
+end
+
+figures do
+	languages.each do |lang|
+		config = $config['default'].merge($config[lang]) rescue $config['default']
+
+		puts "#{lang}:"
+		prefacemarkdown = Dir["#$root/#{lang}/0preface/*.markdown"].sort.map do |file|
+			File.read(file)
+		end.join("\n\n")
+
+		print "\tParsing preface markdown... "
+		preface = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
+			pipe.write(pre_pandoc(prefacemarkdown, config))
+			pipe.close_write
+			post_pandoc(pipe.read, config, lang, false)
+		end
+        
+        chaptersmarkdown = Dir["#$root/#{lang}/*chapters/*.markdown"].sort.map do |file|
+			File.read(file)
+		end.join("\n\n")
+        puts "done"
+        
+		print "\tParsing main chapters markdown... "
+		chapters = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
+			pipe.write(pre_pandoc(chaptersmarkdown, config))
+			pipe.close_write
+			post_pandoc(pipe.read, config, lang)
+		end
+        puts "done"
+        
+        appendixmarkdown = Dir["#$root/#{lang}/*appendix/*.markdown"].sort.map do |file|
+			File.read(file)
+		end.join("\n\n")
+
+		print "\tParsing appendix markdown... "
+		appendix = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
+			pipe.write(pre_pandoc(appendixmarkdown, config))
+			pipe.close_write
+			post_pandoc(pipe.read, config, lang)
+		end
+		puts "done"
+
+		print "\tCreating main.tex for #{lang}... "
+		dir = "#$here/#{lang}"
+		mkdir_p(dir)
+        
+		File.open("#{dir}/main.tex", 'w') do |file|
+			file.write(template.result(binding))
+		end
+		puts "done"
+
+		abort = false
+
+		puts "\tRunning XeTeX:"
+		cd($root)
+		3.times do |i|
+			print "\t\tPass #{i + 1}... "
+			IO.popen("xelatex -output-directory=\"#{dir}\" \"#{dir}/main.tex\" 2>&1",'r:UTF-16LE:UTF-8') do |pipe|
+				unless $DEBUG
+					if ~ /^!\s/
+						puts "failed with:\n\t\t\t#{$_.strip}"
+						puts "\tConsider running this again with --debug."
+						abort = true
+					end while pipe.gets and not abort
+				else
+					STDERR.print while pipe.gets rescue abort = true
+				end
+			end
+			break if abort
+			puts "done"
+		end
+
+		unless abort
+			print "\tMoving output to #{name}.#{lang}.pdf... "
+                        mv("#{dir}/main.pdf", "#$root/#{name}.#{lang}.pdf")
+			puts "done"
+        else
+            print "\tConvert error, exit !\n"
+            exit 1
+		end
+	end
+end
+
+
