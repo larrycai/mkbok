@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+# -*- coding: utf-8 -*-
 
 require 'optparse'
 require 'fileutils'
@@ -8,10 +9,10 @@ require 'yaml'
 include FileUtils
 
 options = {
-    :build=> "pdf",
-    :lang => "zh",
-    :config     => "latex/config.yml",
-    :template   => "latex/template.tex"
+    "build"=> "pdf",
+    "lang" => "zh",
+    "config"     => "latex/config.yml",
+    "template"   => "latex/template.tex"
 }
 CONFIG_FILE = File.join('.mkbok.yml')
 if File.exists? CONFIG_FILE
@@ -25,39 +26,43 @@ option_parser = OptionParser.new do |opts|
     Usage: #{executable_name} [options]    
     "
     # Create a switch
-    opts.on("-b","--build FORMAT","build") do |format|
-        unless format=="pdf"
-            raise ArgumentError,"FORMAT must be in 'pdf' format"
+    opts.on("-b","--build FORMAT","build format:epub,pdf,html. seperated by ','") do |format|
+        formatOptions = format.split(",")
+        formatOptions.each do | fmt |
+            #puts fmt
+            unless ["pdf","epub","html"].include?(fmt)
+                raise ArgumentError,"FORMAT must be one of 'pdf,epub,html' format"
+            end
         end
-        options[:build] = format
+        options["outputformat"] = formatOptions
     end
     opts.on("-d","--debug","debug") do 
-        options[:debug] = true
+        options["debug"] = true
     end
     # Create a flag
     opts.on("-l","--lang LANG","language selection") do |lang|
         unless lang=="zh" or lang=="en"
             raise ArgumentError,"LANG must be in zh or en"
         end
-        options[:lang] = lang
+        options["lang"] = lang
     end
     opts.on("-c","--config CONFIG","config file") do |config|
         unless File.exists? config
             raise ArgumentError,"config file \"#{config}\" doesn't exist"
         end
-        options[:config] = config
+        options["config"] = config
     end
     opts.on("-t","--template template.tex","latex template file") do |template|
         unless File.exists? template
             raise ArgumentError,"template file \"#{template}\" doesn't exist"
         end
-        options[:template] = template
+        options["template"] = template
     end
     opts.on("-n","--name book name","book name") do |name|
         unless name =~ /^[a-zA-Z0-9]+$/
             raise ArgumentError,"name should be [a-zA-Z0-9]"
         end
-        options[:name] = name
+        options["name"] = name
     end
 end
 
@@ -67,9 +72,9 @@ option_parser.parse!
 $here = Dir.getwd
 $root = File.join($here)
 $outDir = File.join($root, 'pdf')
-options[:name] = File.basename(Dir.getwd) unless options[:name]
+options["name"] = File.basename(Dir.getwd) unless options["name"]
 
-puts options.inspect if options[:debug]
+puts options.inspect if options["debug"]
 
 def figures(&block)
 	begin
@@ -190,109 +195,163 @@ def post_pandoc(string, config, lang, chapter=true)
 	end
 end
 
-$config = YAML.load_file(options[:config])
-template = ERB.new(File.read(options[:template]))
-languages = [options[:lang]]
-missing = ['pandoc', 'xelatex'].reject{|command| command_exists?(command)}
-unless missing.empty?
-	puts "Missing dependencies: #{missing.join(', ')}."
-	puts "Install these and try again."
-	exit
+def generate_pdf(options)
+    $config = YAML.load_file(options["config"])
+    template = ERB.new(File.read(options["template"]))
+    languages = [options["lang"]]
+    missing = ['pandoc', 'xelatex'].reject{|command| command_exists?(command)}
+    unless missing.empty?
+        puts "Missing dependencies: #{missing.join(', ')}."
+        puts "Install these and try again."
+        exit
+    end
+
+    puts "Will generate pdf for the following languages using template #{options["template"]}:"
+    puts "    #{languages}"
+    puts
+
+    figures do
+        languages.each do |lang|
+            config = $config['default'].merge($config[lang]) rescue $config['default']
+
+            puts "#{lang}:"
+            puts "\tParsing preface markdown... "        
+            prefacemarkdown = Dir["#$root/#{lang}/*preface/*.markdown"].sort.map do |file|
+                puts "\t =>"+file
+                File.read(file)
+            end.join("\n\n")
+
+            preface = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
+                pipe.write(pre_pandoc(prefacemarkdown, config))
+                pipe.close_write
+                post_pandoc(pipe.read, config, lang, false)
+            end
+            
+            puts "\n\tParsing main chapters markdown... "
+            found = false
+            chaptersmarkdown = Dir["#$root/#{lang}/*chapters/*.markdown"].sort.map do |file|
+                found = true
+                puts "\t =>"+file
+                File.read(file)
+            end.join("\n\n")
+            chaptersmarkdown = Dir["#$root/#{lang}/*/*.markdown"].sort.map do |file|
+                puts "\t =>"+file
+                File.read(file)
+            end.join("\n\n") unless found
+            # puts "done"
+            
+            latex = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
+                pipe.write(pre_pandoc(chaptersmarkdown, config))
+                pipe.close_write
+                post_pandoc(pipe.read, config, lang)
+            end
+            # puts "done"
+            
+            puts "\n\tParsing appendix markdown... "        
+            appendixmarkdown = Dir["#$root/#{lang}/*appendix/*.markdown"].sort.map do |file|
+                puts "\t =>"+file        
+                File.read(file)
+            end.join("\n\n")
+
+            appendix = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
+                pipe.write(pre_pandoc(appendixmarkdown, config))
+                pipe.close_write
+                post_pandoc(pipe.read, config, lang)
+            end
+            #puts "done"
+
+            print "\n\tCreating main.tex for #{lang}... "
+            dir = "latex/#{lang}"
+            mkdir_p(dir)
+            
+            File.open("#{dir}/main.tex", 'w') do |file|
+                file.write(template.result(binding))
+            end
+            puts "done"
+
+            abort = false
+
+            puts "\tRunning XeTeX:"
+            cd($root)
+            3.times do |i|
+                print "\t\tPass #{i + 1}... "
+                IO.popen("xelatex -output-directory=\"#{dir}\" \"#{dir}/main.tex\" 2>&1",'r:UTF-16LE:UTF-8') do |pipe|
+                    unless $DEBUG
+                        if ~ /^!\s/
+                            puts "failed with:\n\t\t\t#{$_.strip}"
+                            puts "\tConsider running this again with --debug."
+                            abort = true
+                        end while pipe.gets and not abort
+                    else
+                        STDERR.print while pipe.gets rescue abort = true
+                    end
+                end
+                break if abort
+                puts "done"
+            end
+
+            unless abort
+                print "\tMoving output to #{options["name"]}.#{lang}.pdf... "
+                            mv("#{dir}/main.pdf", "#$root/#{options["name"]}.#{lang}.pdf")
+                puts "done"
+            else
+                print "\tConvert error, exit !\n"
+                exit 1
+            end
+        end
+    end
 end
 
-puts "Will generate pdf for the following languages using template #{options[:template]}:"
-puts "    #{languages}"
-puts
+def generate_ebook(options)
+    name = File.basename(Dir.getwd)
 
-figures do
-	languages.each do |lang|
-		config = $config['default'].merge($config[lang]) rescue $config['default']
+    puts " "
+    puts "Will generate ebooks [#{options["outputformat"].join(',')}] for the following languages #{options["lang"]}"
+    puts " "
+    
+    options["lang"].each do |lang|
+        puts "convert content for '#{lang}' language"
 
-		puts "#{lang}:"
-		puts "\tParsing preface markdown... "        
-		prefacemarkdown = Dir["#$root/#{lang}/*preface/*.markdown"].sort.map do |file|
-            puts "\t =>"+file
-			File.read(file)
-		end.join("\n\n")
+        if lang == 'zh'
+            figure_title = '图'
+        else 
+            figure_title = 'Figure'
+        end
 
-		preface = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
-			pipe.write(pre_pandoc(prefacemarkdown, config))
-			pipe.close_write
-			post_pandoc(pipe.read, config, lang, false)
-		end
-        
-   		puts "\n\tParsing main chapters markdown... "
-        found = false
-        chaptersmarkdown = Dir["#$root/#{lang}/*chapters/*.markdown"].sort.map do |file|
-            found = true
-            puts "\t =>"+file
-			File.read(file)
-		end.join("\n\n")
-        chaptersmarkdown = Dir["#$root/#{lang}/*/*.markdown"].sort.map do |file|
-            puts "\t =>"+file
-			File.read(file)
-		end.join("\n\n") unless found
-        # puts "done"
-        
-		latex = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
-			pipe.write(pre_pandoc(chaptersmarkdown, config))
-			pipe.close_write
-			post_pandoc(pipe.read, config, lang)
-		end
-        # puts "done"
-        
-		puts "\n\tParsing appendix markdown... "        
-        appendixmarkdown = Dir["#$root/#{lang}/*appendix/*.markdown"].sort.map do |file|
-            puts "\t =>"+file        
-			File.read(file)
-		end.join("\n\n")
+        dir = File.expand_path(File.join(File.dirname(__FILE__), lang))
+        book_content = ""
+        Dir[File.join(dir, '**', '*.markdown')].sort.each do |input|
+            puts "\tProcessing #{input}"
+            content = File.read(input)
+            content.gsub!(/Insert\s+(.*)(\.png)\s*\n?\s*#{figure_title}\s+(.*)/, '![\3](figures/\1-tn\2 "\3")')
+            book_content << content
+        end
 
-		appendix = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
-			pipe.write(pre_pandoc(appendixmarkdown, config))
-			pipe.close_write
-			post_pandoc(pipe.read, config, lang)
-		end
-		#puts "done"
-
-		print "\n\tCreating main.tex for #{lang}... "
-		dir = "latex/#{lang}"
-		mkdir_p(dir)
-        
-		File.open("#{dir}/main.tex", 'w') do |file|
-			file.write(template.result(binding))
-		end
-		puts "done"
-
-		abort = false
-
-		puts "\tRunning XeTeX:"
-		cd($root)
-		3.times do |i|
-			print "\t\tPass #{i + 1}... "
-			IO.popen("xelatex -output-directory=\"#{dir}\" \"#{dir}/main.tex\" 2>&1",'r:UTF-16LE:UTF-8') do |pipe|
-				unless $DEBUG
-					if ~ /^!\s/
-						puts "failed with:\n\t\t\t#{$_.strip}"
-						puts "\tConsider running this again with --debug."
-						abort = true
-					end while pipe.gets and not abort
-				else
-					STDERR.print while pipe.gets rescue abort = true
-				end
-			end
-			break if abort
-			puts "done"
-		end
-
-		unless abort
-			print "\tMoving output to #{options[:name]}.#{lang}.pdf... "
-                        mv("#{dir}/main.pdf", "#$root/#{options[:name]}.#{lang}.pdf")
-			puts "done"
-        else
-            print "\tConvert error, exit !\n"
-            exit 1
-		end
-	end
+        File.open("#{name}.#{lang}.markdown", 'w') do |output|
+            output.write(book_content)
+        end
+        # pandoc -S -s --epub-metadata=metadata.xml -o sdcamp.zh.html     --epub-stylesheet=epub/ProGit.css epub/title.txt sdcamp.zh.markdown 
+        options["outputformat"].each do | format |
+            system('pandoc',
+               '--standalone', 
+               '--table-of-contents',
+               '--epub-metadata', 'epub/metadata.xml',
+               '--epub-stylesheet', 'epub/book.css', # this doesn't work 
+               '--output', "#{name}.#{lang}.#{format}",
+               "title.#{lang}.txt", # little strange, if this put under epub, pandoc reports error
+               "#{name}.#{lang}.markdown")
+          # pandoc -S --epub-metadata=metadata.xml -o progit.epub title.txt
+            puts("#{name}.#{lang}.#{format} is generated")
+        end
+    end
 end
 
+if options["outputformat"].include?("pdf")
+    #puts "pdf"
+    generate_pdf(options)
+end
+options["outputformat"].delete("pdf")
+if options["outputformat"].count>0
+    generate_ebook(options)
+end
 
