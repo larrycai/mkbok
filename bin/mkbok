@@ -29,12 +29,12 @@ option_parser = OptionParser.new do |opts|
     opts.on("-b","--build FORMAT","build format:epub,pdf,html. seperated by ','") do |format|
         formatOptions = format.split(",")
         formatOptions.each do | fmt |
-            #puts fmt
+            puts fmt
             unless ["pdf","epub","html"].include?(fmt)
                 raise ArgumentError,"FORMAT must be one of 'pdf,epub,html' format"
             end
         end
-        options["outputformat"] = formatOptions
+        options["build"] = format
     end
     opts.on("-d","--debug","debug") do 
         options["debug"] = true
@@ -73,6 +73,7 @@ $here = Dir.getwd
 $root = File.join($here)
 $outDir = File.join($root, 'pdf')
 options["name"] = File.basename(Dir.getwd) unless options["name"]
+options["outputformat"] = options["build"].split(',')
 
 puts options.inspect if options["debug"]
 
