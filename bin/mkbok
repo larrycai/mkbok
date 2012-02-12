@@ -29,7 +29,7 @@ option_parser = OptionParser.new do |opts|
     opts.on("-b","--build FORMAT","build format:epub,pdf,html. seperated by ','") do |format|
         formatOptions = format.split(",")
         formatOptions.each do | fmt |
-            puts fmt
+            # puts fmt
             unless ["pdf","epub","html"].include?(fmt)
                 raise ArgumentError,"FORMAT must be one of 'pdf,epub,html' format"
             end
@@ -319,7 +319,8 @@ def generate_ebook(options)
             figure_title = 'Figure'
         end
 
-        dir = File.expand_path(File.join(File.dirname(__FILE__), lang))
+        dir = File.expand_path(File.join(Dir.getwd, lang))
+        #puts File.join(Dir.getwd, lang)
         book_content = ""
         Dir[File.join(dir, '**', '*.markdown')].sort.each do |input|
             puts "\tProcessing #{input}"
