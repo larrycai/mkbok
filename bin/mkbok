@@ -343,7 +343,6 @@ def generate_ebook(options)
         options["outputformat"].each do | format |
             system('pandoc',
                '--standalone', 
-               '--table-of-contents',
                '--epub-metadata', 'epub/metadata.xml',
                '--epub-stylesheet', 'epub/book.css', # this doesn't work 
                '--output', "#{name}.#{lang}.#{format}",
