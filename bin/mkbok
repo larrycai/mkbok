@@ -8,74 +8,85 @@ require 'yaml'
 
 include FileUtils
 
-options = {
-    "build"=> "pdf",
-    "lang" => "zh",
-    "config"     => "latex/config.yml",
-    "template"   => "latex/template.tex"
-}
-CONFIG_FILE = File.join('.mkbok.yml')
-if File.exists? CONFIG_FILE
-    config_options = YAML.load_file(CONFIG_FILE)
-    options.merge!(config_options)
-end
+def main()
+    options = {
+        "build"=> "pdf",
+        "lang" => "zh",
+        "config"     => "latex/config.yml",
+        "template"   => "latex/template.tex"
+    }
+    config_file = File.join('.mkbok.yml')
+    if File.exists? config_file
+        config_options = YAML.load_file(config_file)
+        options.merge!(config_options)
+    end
 
-option_parser = OptionParser.new do |opts|
-    executable_name = File.basename($PROGRAM_NAME)
-    opts.banner = "make ebooks from markdown plain text
-    Usage: #{executable_name} [options]    
-    "
-    # Create a switch
-    opts.on("-b","--build FORMAT","build format:epub,pdf,html. seperated by ','") do |format|
-        formatOptions = format.split(",")
-        formatOptions.each do | fmt |
-            # puts fmt
-            unless ["pdf","epub","html"].include?(fmt)
-                raise ArgumentError,"FORMAT must be one of 'pdf,epub,html' format"
+    option_parser = OptionParser.new do |opts|
+        executable_name = File.basename($PROGRAM_NAME)
+        opts.banner = "make ebooks from markdown plain text
+        Usage: #{executable_name} [options]    
+        "
+        # Create a switch
+        opts.on("-b","--build FORMAT","build format:epub,pdf,html. seperated by ','") do |format|
+            formatOptions = format.split(",")
+            formatOptions.each do | fmt |
+                # puts fmt
+                unless ["pdf","epub","html"].include?(fmt)
+                    raise ArgumentError,"FORMAT must be one of 'pdf,epub,html' format"
+                end
             end
+            options["build"] = format
         end
-        options["build"] = format
-    end
-    opts.on("-d","--debug","debug") do 
-        options["debug"] = true
-    end
-    # Create a flag
-    opts.on("-l","--lang LANG","language selection") do |lang|
-        unless lang=="zh" or lang=="en"
-            raise ArgumentError,"LANG must be in zh or en"
+        opts.on("-d","--debug","debug") do 
+            options["debug"] = true
         end
-        options["lang"] = lang
-    end
-    opts.on("-c","--config CONFIG","config file") do |config|
-        unless File.exists? config
-            raise ArgumentError,"config file \"#{config}\" doesn't exist"
+        # Create a flag
+        opts.on("-l","--lang LANG","language selection") do |lang|
+            unless lang=="zh" or lang=="en"
+                raise ArgumentError,"LANG must be in zh or en"
+            end
+            options["lang"] = lang
         end
-        options["config"] = config
-    end
-    opts.on("-t","--template template.tex","latex template file") do |template|
-        unless File.exists? template
-            raise ArgumentError,"template file \"#{template}\" doesn't exist"
+        opts.on("-c","--config CONFIG","config file") do |config|
+            unless File.exists? config
+                raise ArgumentError,"config file \"#{config}\" doesn't exist"
+            end
+            options["config"] = config
         end
-        options["template"] = template
-    end
-    opts.on("-n","--name book name","book name") do |name|
-        unless name =~ /^[a-zA-Z0-9]+$/
-            raise ArgumentError,"name should be [a-zA-Z0-9]"
+        opts.on("-t","--template template.tex","latex template file") do |template|
+            unless File.exists? template
+                raise ArgumentError,"template file \"#{template}\" doesn't exist"
+            end
+            options["template"] = template
         end
-        options["name"] = name
+        opts.on("-n","--name book name","book name") do |name|
+            unless name =~ /^[a-zA-Z0-9]+$/
+                raise ArgumentError,"name should be [a-zA-Z0-9]"
+            end
+            options["name"] = name
+        end
+    end
+
+    option_parser.parse!
+
+    #$here = File.expand_path(File.dirname(__FILE__))
+    $here = Dir.getwd
+    $root = File.join($here)
+    $outDir = File.join($root, 'pdf')
+    options["name"] = File.basename(Dir.getwd) unless options["name"]
+    options["outputformat"] = options["build"].split(',')
+
+    puts options.inspect if options["debug"]
+      
+    if options["outputformat"].include?("pdf")
+        #puts "pdf"
+        generate_pdf(options)
+    end
+    options["outputformat"].delete("pdf")
+    if options["outputformat"].count>0
+        generate_ebook(options)
     end
 end
-
-option_parser.parse!
-
-#$here = File.expand_path(File.dirname(__FILE__))
-$here = Dir.getwd
-$root = File.join($here)
-$outDir = File.join($root, 'pdf')
-options["name"] = File.basename(Dir.getwd) unless options["name"]
-options["outputformat"] = options["build"].split(',')
-
-puts options.inspect if options["debug"]
 
 def figures(&block)
 	begin
@@ -312,7 +323,14 @@ end
 
 def generate_ebook(options)
     name = File.basename(Dir.getwd)
-
+    
+    missing = ['pandoc'].reject{|command| command_exists?(command)}
+    unless missing.empty?
+        puts "Missing dependencies: #{missing.join(', ')}."
+        puts "Install these and try again."
+        exit
+    end
+    
     puts " "
     puts "Will generate ebooks [#{options["outputformat"].join(',')}] for the following languages #{options["lang"]}"
     puts " "
@@ -354,12 +372,5 @@ def generate_ebook(options)
     end
 end
 
-if options["outputformat"].include?("pdf")
-    #puts "pdf"
-    generate_pdf(options)
-end
-options["outputformat"].delete("pdf")
-if options["outputformat"].count>0
-    generate_ebook(options)
-end
+main
 
