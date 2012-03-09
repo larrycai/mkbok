@@ -1,0 +1,31 @@
+= `mkbok` - Make book using markdown
+
+Author:: Larry Cai (mailto:larry.caiyu@gmail.com)
+
+Copyright:: Copyright (c) 2012 by  Larry Cai
+License:: Distributes under the Apache License,
+	see LICENSE.txt in the source distro
+
+This application provides an easy interface way to manage the book using markdown format
+
+== Install
+
+Install:
+    gem install mkbok
+
+== Usage
+
+Create new project:
+    mkbok --create mybok
+
+For more help:
+    mkbok --help
+
+== Developing for `mkbok`
+
+First, install bundler:
+    gem install bundler
+
+Get the development dependencies
+    bundle install
+Most of the code is in `mkbok.rb`.
