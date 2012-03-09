@@ -13,6 +13,7 @@ Gem::Specification.new do |s|
   s.email       = ["larry.caiyu@gmail.com"]
   s.homepage    = "http://github.com/larrycai/mkbok"
   s.summary     = "tools to generate ebooks from markdown"
+  
   s.description = "the ebook generate tools from markdown plain text"
 
   s.required_rubygems_version = ">= 1.3.6"
@@ -21,8 +22,8 @@ Gem::Specification.new do |s|
   s.rubyforge_project         = "mkbok"
 
   # If you have other dependencies, add them here
-  # s.add_dependency "another", "~> 1.2"
-
+  s.add_development_dependency('aruba', '~> 0.4.6')
+  
   # If you need to check in files that aren't .rb files, add them here
   s.files        = Dir["{lib}/**/*.rb", "bin/*", "LICENSE", "*.md"]
   s.require_path = 'lib'
