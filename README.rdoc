@@ -1,4 +1,4 @@
-= `mkbok` - Make book using markdown
+= `mkbok` - make book using markdown
 
 Author:: Larry Cai (mailto:larry.caiyu@gmail.com)
 
@@ -6,7 +6,7 @@ Copyright:: Copyright (c) 2012 by  Larry Cai
 License:: Distributes under the Apache License,
 	see LICENSE.txt in the source distro
 
-This application provides an easy interface way to manage the book using markdown format
+This application generate ebooks (.pdf,.epub,.mobi) from markdown plaintext files
 
 == Install
 
@@ -16,10 +16,17 @@ Install:
 == Usage
 
 Create new project:
-    mkbok --create mybok
-
+    mkbok --create sample --title "learn mkbok"
+    mkbok --build # needs pandoc,XeTex packages
+    
 For more help:
     mkbok --help
+    
+=== Todo
+
+Build over web
+    mkbok build --web http://mkbok.com/diy # it will zip file and upload to web
+    mkbok build --web http://mkbok.com/ --source http://github.com/larrycai/mkbok # generate pdf from github    
 
 == Developing for `mkbok`
 
