@@ -13,7 +13,9 @@ RDoc::Task.new do |rd|
   rd.title = 'mkbok - make book using markdown'
 end
 
-Cucumber::Rake::Task.new(:features) do |t|
+Cucumber::Rake::Task.new(:cucumber) do |t|
   t.cucumber_opts = "features --format pretty -x"
   t.fork = false
 end
+
+task :default => [:cucumber,:package,:gem]

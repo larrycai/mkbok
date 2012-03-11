@@ -2,6 +2,12 @@ Feature: mkbok
   @announce
   Scenario: help
     When I run `mkbok --help`
-    Then the stdout should contain "Usage: mkbok"
-    
+    Then the output should contain: 
+      """
+      Usage: mkbok
+      """
+    And the output should contain:
+      """
+      -c, --config CONFIG              config file
+      """    
       
