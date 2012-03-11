@@ -1,7 +1,7 @@
 Feature: mkbok 
+  @announce
   Scenario: help
-    When I run 'mkbok --help'
-    Then it should pass with:
-      """
-      Usage: mkbok
-      """
+    When I run `mkbok --help`
+    Then the stdout should contain "Usage: mkbok"
+    
+      
