@@ -1,5 +1,7 @@
 = `mkbok` - make book using markdown
 
+{<img src="https://secure.travis-ci.org/larrycai/mkbok.png" />}[http://travis-ci.org/larrycai/mkbok]
+
 Author:: Larry Cai (mailto:larry.caiyu@gmail.com)
 
 Copyright:: Copyright (c) 2012 by  Larry Cai
