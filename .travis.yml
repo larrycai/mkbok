@@ -5,3 +5,5 @@ before_script:
   - uname -a 
   - gem update --system
   - gem --version
+script:
+  - bundle exec rake cucumber --trace; bundle exec rake --trace
