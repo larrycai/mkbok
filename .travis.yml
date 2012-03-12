@@ -1,9 +1,7 @@
-language:ruby
-rvm:
-  - 1.9.3
 before_script:
-  - uname -a 
-  - gem update --system
-  - gem --version
-script:
-  - bundle exec rake cucumber --trace; bundle exec rake --trace
+  - uname -a
+bundler_args: --trace 
+language: ruby
+rvm:
+  - 1.9.3 
+
