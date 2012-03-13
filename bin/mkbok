@@ -5,6 +5,7 @@ require 'optparse'
 require 'fileutils'
 require 'erb'
 require 'yaml'
+require 'pathname'
 
 include FileUtils
 
@@ -65,6 +66,13 @@ def main()
             end
             options["name"] = name
         end
+        opts.on("-g","--generate project","project name") do |name|
+            unless name =~ /^[a-zA-Z0-9]+$/
+                raise ArgumentError,"name should be [a-zA-Z0-9]"
+            end
+            options["command"] = "generate"
+            options["name"] = name
+        end        
     end
 
     option_parser.parse!
@@ -77,7 +85,12 @@ def main()
     options["outputformat"] = options["build"].split(',')
 
     puts options.inspect if options["debug"]
-      
+    
+    if options["command"] == "generate"
+        generate_project(options["name"])
+        exit
+    end
+    
     if options["outputformat"].include?("pdf")
         #puts "pdf"
         generate_pdf(options)
@@ -372,5 +385,37 @@ def generate_ebook(options)
     end
 end
 
+# http://stackoverflow.com/questions/5074327/most-appropriate-way-to-generate-directory-of-files-from-directory-of-template-f
+def generate_project(project)
+    destination = project
+    source = File.dirname(__FILE__)+"/../templates"
+    #puts "generate project \"#{destination}\" from source \"#{source}\""
+    FileUtils.rmtree(destination)
+    FileUtils.mkdir_p(destination)
+    sourceroot=Pathname.new(source)
+    sourcerealpath = sourceroot.cleanpath
+    puts "generate project \"#{destination}\" from source \"#{sourcerealpath}\""     
+    Dir.glob(File.join(source, '**/*')).each do |path|
+      pathname = Pathname.new(path)
+      relative = pathname.relative_path_from(sourceroot)
+      #puts "parent:" , sourceroot
+      #puts "relative:", relative
+      if File.directory?(pathname) 
+        destdir = File.join(destination, relative.dirname)
+        #puts "create #{destdir} "
+        FileUtils.mkdir_p(destdir) 
+      else
+          FileUtils.mkdir_p(File.join(destination, relative.dirname))
+          if pathname.extname == '.erb'
+            File.open(destination.join(pathname.basename.sub(/\.erb$/, '')), 'w') do |file|
+              file.puts(ERB.new(File.read(path)).result(binding))
+            end   
+          else
+            print pathname.cleanpath, " => ", File.join(destination, relative.dirname),"\n"
+            FileUtils.cp(pathname, File.join(destination, relative.dirname))
+          end
+      end
+    end
+end
 main
 

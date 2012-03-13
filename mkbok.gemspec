@@ -25,7 +25,7 @@ Gem::Specification.new do |s|
   s.add_development_dependency('aruba', '~> 0.4.6')
   
   # If you need to check in files that aren't .rb files, add them here
-  s.files        = Dir["{lib}/**/*.rb", "bin/*", "LICENSE", "*.md"]
+  s.files        = Dir["{lib}/**/*.rb", "bin/*", "templates/**/*","LICENSE", "*.md"]
   s.require_path = 'lib'
 
   # If you need an executable, add it here
