@@ -18,7 +18,7 @@ Install:
 == Usage
 
 Create new project:
-    mkbok --create sample --title "learn mkbok"
+    mkbok --generate sample # generate new book template based on kaiyuanbook
     mkbok --build # needs pandoc,XeTex packages
     
 For more help:
