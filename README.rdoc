@@ -5,8 +5,7 @@
 Author:: Larry Cai (mailto:larry.caiyu@gmail.com)
 
 Copyright:: Copyright (c) 2012 by  Larry Cai
-License:: Distributes under the Apache License,
-	see LICENSE.txt in the source distro
+License:: Distributes under the Apache License 2.0, see LICENSE in the source distro
 
 This application generate ebooks (.pdf,.epub,.mobi) from markdown plaintext files
 
