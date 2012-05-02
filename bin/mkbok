@@ -13,8 +13,11 @@ def main()
     options = {
         "build"=> "pdf",
         "lang" => "zh",
-        "config"     => "latex/config.yml",
-        "template"   => "latex/template.tex"
+        "config"        => "latex/config.yml",
+        "template"      => "latex/template.tex",
+        "chapter-files" => "*/*.markdown",
+        "appendix-files"=> "*appendix/*.markdown",
+        "jeykll"        => false
     }
     config_file = File.join('.mkbok.yml')
     if File.exists? config_file
@@ -140,20 +143,22 @@ end
 
 def pre_pandoc(string, config)
 	replace(string) do
-                s /\#\#\#\#\# (.*?) \#\#\#\#\#/, 'PARASECTION: \1'
+        s /\#\#\#\#\# (.*?) \#\#\#\#\#/, 'PARASECTION: \1'
 		# Pandoc discards #### subsubsections #### - this hack recovers them
 		s /\#\#\#\# (.*?) \#\#\#\#/, 'SUBSUBSECTION: \1'
 		
+        # convert div figures to normal markdown format
+        # http://johnmacfarlane.net/pandoc/README.html
+        s /^<div class=\"figures\"> <img src=\"..\/figures\/(.*)\".*<\/div>/, '![](figures/\1)\ '
+        # "
 		# Turns URLs into clickable links
 		s /\`(http:\/\/[A-Za-z0-9\/\%\&\=\-\_\\\.]+)\`/, '<\1>'
 		s /(\n\n)\t(http:\/\/[A-Za-z0-9\/\%\&\=\-\_\\\.]+)\n([^\t]|\t\n)/, '\1<\2>\1'
-
+        # `
 		# Process figures
 		s /Insert\s18333fig\d+\.png\s*\n.*?\d{1,2}-\d{1,2}\. (.*)/, 'FIG: \1'
 	end
 end
-
-# `
 
 def post_pandoc(string, config, lang, chapter=true)
 	replace(string) do
@@ -209,6 +214,9 @@ def post_pandoc(string, config, lang, chapter=true)
             else
                 s /(^\\item)/m,'\item[*]'
             end
+            
+            # change the width to standard .6 width 
+            s /\\includegraphics/m, '\\includegraphics[width=\\imgwidth]'
         end
         
         if chapter != true
@@ -219,6 +227,10 @@ def post_pandoc(string, config, lang, chapter=true)
 		
 	end
 end
+
+def check_jekyll(str)
+    str.lines.to_a[4..-3].join
+end 
 
 def generate_pdf(options)
     $config = YAML.load_file(options["config"])
@@ -240,10 +252,17 @@ def generate_pdf(options)
             config = $config['default'].merge($config[lang]) rescue $config['default']
 
             puts "#{lang}:"
-            puts "\tParsing preface markdown... "        
-            prefacemarkdown = Dir["#$root/#{lang}/*preface/*.markdown"].sort.map do |file|
+            
+            prefacefiles = "#$root/#{lang}/#{options['preface-files']}"
+
+            puts "\tParsing preface markdown... #{prefacefiles} "        
+            prefacemarkdown = Dir["#{prefacefiles}"].sort.map do |file|
                 puts "\t =>"+file
-                File.read(file)
+                if options["jeykll"]
+                    check_jekyll(File.read(file))
+                else
+                    File.read(file)
+                end
             end.join("\n\n")
 
             preface = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
@@ -252,17 +271,17 @@ def generate_pdf(options)
                 post_pandoc(pipe.read, config, lang, false)
             end
             
-            puts "\n\tParsing main chapters markdown... "
-            found = false
-            chaptersmarkdown = Dir["#$root/#{lang}/*chapters/*.markdown"].sort.map do |file|
-                found = true
+            chapterfiles = "#$root/#{lang}/#{options['chapter-files']}"
+            
+            puts "\n\tParsing main chapters markdown... #{chapterfiles} "
+            chaptersmarkdown = Dir["#{chapterfiles}"].sort{|a,b| [Integer(a[/\d+/]),a]<=>[Integer(b[/\d+/]),b]}.map do |file|
                 puts "\t =>"+file
-                File.read(file)
+                if options["jeykll"]
+                    check_jekyll(File.read(file))
+                else
+                    File.read(file)
+                end
             end.join("\n\n")
-            chaptersmarkdown = Dir["#$root/#{lang}/*/*.markdown"].sort.map do |file|
-                puts "\t =>"+file
-                File.read(file)
-            end.join("\n\n") unless found
             # puts "done"
             
             latex = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
@@ -272,11 +291,17 @@ def generate_pdf(options)
             end
             # puts "done"
             
-            puts "\n\tParsing appendix markdown... "        
-            appendixmarkdown = Dir["#$root/#{lang}/*appendix/*.markdown"].sort.map do |file|
-                puts "\t =>"+file        
-                File.read(file)
-            end.join("\n\n")
+            appendixfiles = "#$root/#{lang}/#{options['appendix-files']}"
+            
+            puts "\n\tParsing appendix markdown... #{appendixfiles}  "        
+            appendixmarkdown = Dir["#{appendixfiles}"].sort.map do |file|
+                puts "\t =>"+file
+                if options["jeykll"]
+                    check_jekyll(File.read(file))
+                else
+                    File.read(file)
+                end
+            end.join("\n\n") 
 
             appendix = IO.popen('pandoc -p --no-wrap -f markdown -t latex', 'w+') do |pipe|
                 pipe.write(pre_pandoc(appendixmarkdown, config))
@@ -374,6 +399,8 @@ def generate_ebook(options)
         options["outputformat"].each do | format |
             system('pandoc',
                '--standalone', 
+               '--toc',
+               '--template=template.html',
                '--epub-metadata', 'epub/metadata.xml',
                '--epub-stylesheet', 'epub/book.css', # this doesn't work 
                '--output', "#{name}.#{lang}.#{format}",
@@ -407,7 +434,10 @@ def generate_project(project)
       else
           FileUtils.mkdir_p(File.join(destination, relative.dirname))
           if pathname.extname == '.erb'
-            File.open(destination.join(pathname.basename.sub(/\.erb$/, '')), 'w') do |file|
+            #puts pathname.basename.sub(/\.erb$/, '')
+            #puts destination
+            #puts File.join(destination,pathname.basename.sub(/\.erb$/, ''))
+            File.open(File.join(destination,pathname.basename.sub(/\.erb$/, '')), 'w') do |file|
               file.puts(ERB.new(File.read(path)).result(binding))
             end   
           else
@@ -417,5 +447,6 @@ def generate_project(project)
       end
     end
 end
+
 main
 
