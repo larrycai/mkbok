@@ -1,6 +1,7 @@
 language: ruby
 before_script:
   - uname -a
+  - lsb_release -a
   - gem env
 script: "bundle exec rake"  
 rvm:
